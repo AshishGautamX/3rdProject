@@ -9,26 +9,30 @@ from environment.serverless_env import ServerlessEnv
 
 def train_rl(workload_train: np.ndarray, predictions_train: np.ndarray,
              weights_path: str = None):
-    """Train PPO on the training workload. Returns trained model."""
+    """Train PPO on the training workload. Returns (model, global_max_load)."""
+    global_max_load = max(float(workload_train.max()), 1.0)
     env   = Monitor(ServerlessEnv(workload_train, predictions_train,
-                                  avg_duration_ms=AVG_DURATION_MS))
+                                  avg_duration_ms=AVG_DURATION_MS,
+                                  max_load=global_max_load))
     model = PPO("MlpPolicy", env, verbose=1, device="cpu")
     model.learn(total_timesteps=PPO_TIMESTEPS)
     if weights_path:
         os.makedirs(os.path.dirname(weights_path), exist_ok=True)
         model.save(weights_path)
         print(f"[rl] Policy saved → {weights_path}")
-    return model
+    return model, global_max_load
 
 
 def evaluate_rl(model, workload_test: np.ndarray,
-                predictions_test: np.ndarray) -> list:
+                predictions_test: np.ndarray,
+                global_max_load: float = None) -> list:
     """Run trained policy on test workload.
-    Captures pre-step queue/arrivals for accurate response-time calculation.
-    Returns list of per-step records.
+    global_max_load: pass the training max so observations are on the same
+    scale as during training (prevents distribution shift).
     """
     env    = ServerlessEnv(workload_test, predictions_test,
-                           avg_duration_ms=AVG_DURATION_MS)
+                           avg_duration_ms=AVG_DURATION_MS,
+                           max_load=global_max_load)
     obs, _ = env.reset()
     records, done = [], False
 
@@ -49,8 +53,8 @@ def evaluate_rl(model, workload_test: np.ndarray,
         processed    = min(total_demand, slots)
 
         # Response = queue wait + execution time
-        wait_ms      = (queue_pre / max(slots, 1)) * AVG_DURATION_MS
-        response_ms  = wait_ms + AVG_DURATION_MS
+        wait_ms     = (queue_pre / max(slots, 1)) * AVG_DURATION_MS
+        response_ms = wait_ms + AVG_DURATION_MS
 
         if processed > 0:
             records.append({
@@ -66,9 +70,11 @@ def evaluate_rl(model, workload_test: np.ndarray,
     return records
 
 
-def load_rl(weights_path: str, workload: np.ndarray, predictions: np.ndarray):
+def load_rl(weights_path: str, workload: np.ndarray, predictions: np.ndarray,
+            global_max_load: float = None):
     """Load a previously saved PPO policy."""
-    env   = ServerlessEnv(workload, predictions, avg_duration_ms=AVG_DURATION_MS)
+    env   = ServerlessEnv(workload, predictions, avg_duration_ms=AVG_DURATION_MS,
+                          max_load=global_max_load)
     model = PPO.load(weights_path, env=env)
     print(f"[rl] Policy loaded ← {weights_path}")
     return model

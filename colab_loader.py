@@ -82,7 +82,7 @@ print("\nPreprocessing (normalise + split) ...")
 train_1d, val_1d, test_1d, scaler = preprocess(raw_ts)   # all in [0, 1]
 
 # Scale normalised load → realistic integer job arrivals for the simulator.
-# ARRIVAL_SCALE=50: peak ≈ 50 jobs/min vs MAX_SLOTS=20 → real queuing pressure.
+# ARRIVAL_SCALE=25: avg ~8 jobs/min vs 10 baseline slots — occasional overload.
 train_arr = np.clip(np.round(train_1d * ARRIVAL_SCALE).astype(np.float32), 0, ARRIVAL_SCALE * 3)
 val_arr   = np.clip(np.round(val_1d   * ARRIVAL_SCALE).astype(np.float32), 0, ARRIVAL_SCALE * 3)
 test_arr  = np.clip(np.round(test_1d  * ARRIVAL_SCALE).astype(np.float32), 0, ARRIVAL_SCALE * 3)
@@ -162,16 +162,21 @@ preds_2d_test  = np.tile(aligned_arr[:, None], (1, HORIZON)).astype(np.float32)
 # RL env receives SCALED arrivals so queue dynamics match the baseline sim
 if os.path.exists(rl_weights + ".zip"):
     print("\n[rl] Saved policy found — loading.")
-    rl_model = load_rl(rl_weights, train_arr, preds_2d_train)
+    # Use train max so test env has same observation scale as training env
+    global_max_load = float(train_arr.max())
+    rl_model = load_rl(rl_weights, train_arr, preds_2d_train,
+                       global_max_load=global_max_load)
 else:
     print("\nTraining PPO RL scheduler ...")
-    rl_model = train_rl(train_arr, preds_2d_train, weights_path=rl_weights)
+    rl_model, global_max_load = train_rl(train_arr, preds_2d_train,
+                                          weights_path=rl_weights)
 
 gc.collect()
 
 # === SECTION 8: Evaluate AI Scheduler ========================================
 print("\nEvaluating AI scheduler ...")
-ai_records = evaluate_rl(rl_model, test_arr, preds_2d_test)
+ai_records = evaluate_rl(rl_model, test_arr, preds_2d_test,
+                          global_max_load=global_max_load)
 ai_metrics = summarise(ai_records, len(test_arr), MAX_SLOTS,
                         label="AI SCHEDULER (PPO + LSTM)")
 

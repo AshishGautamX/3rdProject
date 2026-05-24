@@ -74,11 +74,15 @@ def main():
     rl_w = os.path.join(WEIGHTS_DIR, "ppo_policy")
     if args.skip_train and os.path.exists(rl_w + ".zip"):
         from models.rl_scheduler import load_rl
-        rl_model = load_rl(rl_w, train_arr, preds_2d_train)
+        global_max_load = float(train_arr.max())
+        rl_model = load_rl(rl_w, train_arr, preds_2d_train,
+                           global_max_load=global_max_load)
     else:
-        rl_model = train_rl(train_arr, preds_2d_train, weights_path=rl_w)
+        rl_model, global_max_load = train_rl(train_arr, preds_2d_train,
+                                              weights_path=rl_w)
 
-    ai_records = evaluate_rl(rl_model, test_arr, preds_2d_test)
+    ai_records = evaluate_rl(rl_model, test_arr, preds_2d_test,
+                              global_max_load=global_max_load)
     ai_metrics = summarise(ai_records, len(test_arr), MAX_SLOTS,
                            label="AI SCHEDULER (PPO + LSTM)")
 

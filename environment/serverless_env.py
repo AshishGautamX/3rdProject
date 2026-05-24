@@ -14,16 +14,18 @@ class ServerlessEnv(gym.Env):
     metadata = {"render_modes": []}
 
     def __init__(self, workload: np.ndarray, predictions: np.ndarray,
-                 avg_duration_ms: float = 200.0):
+                 avg_duration_ms: float = 200.0, max_load: float = None):
         """
         workload    : 1-D array (T,) — actual invocations per minute
         predictions : 2-D array (T, HORIZON) — LSTM look-ahead predictions
+        max_load    : normalisation constant; pass training max to keep
+                      observation scale consistent across train/test envs.
         """
         super().__init__()
         self.workload      = workload.astype(np.float32)
         self.predictions   = predictions.astype(np.float32)
         self.avg_dur       = avg_duration_ms
-        self.max_load      = max(float(workload.max()), 1.0)
+        self.max_load      = max_load if max_load is not None else max(float(workload.max()), 1.0)
 
         self.observation_space = spaces.Box(0.0, 1.0, shape=(4,), dtype=np.float32)
         self.action_space      = spaces.Discrete(MAX_SLOTS - MIN_SLOTS + 1)
