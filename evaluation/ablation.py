@@ -35,8 +35,11 @@ def simulate_lstm_threshold(invocations: np.ndarray,
     for minute, arrivals in enumerate(invocations):
         arrivals = max(0, int(round(float(arrivals))))
         t_ms     = minute * 60_000
-        pred     = float(lstm_preds_scaled[minute]) if minute < len(lstm_preds_scaled) else arrivals
-        slots    = int(np.clip(round(pred * safety_factor), MIN_SLOTS, MAX_SLOTS))
+        raw_pred = float(lstm_preds_scaled[minute]) if minute < len(lstm_preds_scaled) else float(arrivals)
+        # Warmup: aligned_arr is 0 for the first WINDOW_SIZE minutes.
+        # Fall back to actual arrivals so we don't allocate only 1 slot during warmup.
+        pred  = raw_pred if raw_pred >= 1.0 else max(float(arrivals), float(BASELINE_SLOTS))
+        slots = int(np.clip(round(pred * safety_factor), MIN_SLOTS, MAX_SLOTS))
 
         for _ in range(arrivals):
             arrival_q.append(t_ms)
