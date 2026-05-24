@@ -73,6 +73,8 @@ from data.preprocessor import preprocess
 from data.feature_engineer import build_features, make_sequences
 from config.settings import ARRIVAL_SCALE, AVG_DURATION_MS, MAX_SLOTS, HORIZON, WINDOW_SIZE
 
+BASELINE_SLOTS = 10   # fixed slots for the default FCFS scheduler
+
 print("Loading & aggregating data (one CSV at a time) ...")
 raw_ts = load_aggregated_timeseries(DATA_PATH)       # shape (20160,) raw counts
 
@@ -110,7 +112,7 @@ baseline_records = simulate_baseline(
     test_arr, max_slots=10,
     avg_duration_ms=AVG_DURATION_MS, strategy="fcfs"
 )
-baseline_metrics = summarise(baseline_records, len(test_arr), MAX_SLOTS,
+baseline_metrics = summarise(baseline_records, len(test_arr), BASELINE_SLOTS,
                               label="DEFAULT SCHEDULER (FCFS)")
 
 # === SECTION 6: Train LSTM Predictor =========================================
