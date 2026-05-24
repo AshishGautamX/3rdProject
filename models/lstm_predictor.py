@@ -22,7 +22,7 @@ class LSTMForecaster(nn.Module):
         self.input_dim = input_dim
         self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers,
                             batch_first=True, dropout=dropout)
-        self.fc   = nn.Linear(hidden_dim, horizon)   # predicts horizon load values
+        self.fc   = nn.Linear(hidden_dim, horizon)
 
     def forward(self, x):
         out, _ = self.lstm(x)
@@ -47,19 +47,28 @@ def train_lstm(X_train, y_train, X_val, y_val, weights_path: str = None):
         batch_size=LSTM_BATCH_SIZE)
 
     best_val, patience_cnt = float("inf"), 0
+
     for epoch in range(1, LSTM_EPOCHS + 1):
         model.train()
-        t_loss = sum(
-            (lambda xb, yb: (opt.zero_grad(), loss := criterion(model(xb.to(device)), yb.to(device)),
-             loss.backward(), opt.step(), loss.item())[-1])(xb, yb)
-            for xb, yb in train_dl) / len(train_dl)
+        t_loss = 0.0
+        for xb, yb in train_dl:
+            xb, yb = xb.to(device), yb.to(device)
+            opt.zero_grad()
+            loss = criterion(model(xb), yb)
+            loss.backward()
+            opt.step()
+            t_loss += loss.item()
+        t_loss /= len(train_dl)
 
         model.eval()
+        v_loss = 0.0
         with torch.no_grad():
-            v_loss = sum(criterion(model(xb.to(device)), yb.to(device)).item()
-                         for xb, yb in val_dl) / len(val_dl)
+            for xb, yb in val_dl:
+                v_loss += criterion(model(xb.to(device)), yb.to(device)).item()
+        v_loss /= len(val_dl)
 
         print(f"[lstm] Epoch {epoch:3d}/{LSTM_EPOCHS} | train={t_loss:.4f} val={v_loss:.4f}")
+
         if v_loss < best_val:
             best_val, patience_cnt = v_loss, 0
             if weights_path:
@@ -72,7 +81,8 @@ def train_lstm(X_train, y_train, X_val, y_val, weights_path: str = None):
                 break
 
     if weights_path and os.path.exists(weights_path):
-        model.load_state_dict(torch.load(weights_path, map_location=device))
+        model.load_state_dict(torch.load(weights_path, map_location=device,
+                                         weights_only=True))
     return model
 
 
@@ -88,6 +98,7 @@ def load_lstm(weights_path: str, input_dim: int):
     """Load a saved LSTM from disk."""
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model  = LSTMForecaster(input_dim).to(device)
-    model.load_state_dict(torch.load(weights_path, map_location=device))
+    model.load_state_dict(torch.load(weights_path, map_location=device,
+                                     weights_only=True))
     print(f"[lstm] Weights loaded from {weights_path}")
     return model

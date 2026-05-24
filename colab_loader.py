@@ -152,8 +152,10 @@ if FORCE_RL_RETRAIN and os.path.exists(rl_weights + ".zip"):
     os.remove(rl_weights + ".zip")
     print("[rl] Old policy deleted — will retrain on current scale.")
 
-preds_2d_train = np.tile(train_1d[:, None], (1, HORIZON))   # (T, H) normalised
-preds_2d_test  = np.tile(aligned_norm[:, None], (1, HORIZON))
+# Predictions passed to the RL env MUST be on the same scale as workload
+# (train_arr / test_arr), so env's internal pred/max_load gives correct obs.
+preds_2d_train = np.tile(train_arr[:, None], (1, HORIZON)).astype(np.float32)
+preds_2d_test  = np.tile(aligned_arr[:, None], (1, HORIZON)).astype(np.float32)
 
 # RL env receives SCALED arrivals so queue dynamics match the baseline sim
 if os.path.exists(rl_weights + ".zip"):
