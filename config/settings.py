@@ -37,6 +37,12 @@ GROQ_MODEL       = "llama-3.3-70b-versatile"
 GROQ_API_KEY_ENV = "GROQ_API_KEY"
 SPIKE_THRESHOLD  = 2.0     # std-devs above mean to trigger LLM
 
+# ── Simulator ─────────────────────────────────────────────────────────────────
+# Scale normalised load (0-1) → realistic job arrivals per minute.
+# With MAX_SLOTS=20, ARRIVAL_SCALE=50 means peak load ≈ 2.5× capacity → queuing.
+ARRIVAL_SCALE    = 50
+AVG_DURATION_MS  = 200.0   # ms — used consistently in baseline AND RL env
+
 # ── GitHub ────────────────────────────────────────────────────────────────────
 GITHUB_USER = "AshishGautamX"
 GITHUB_REPO = "3rdProject"
