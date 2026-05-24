@@ -3,7 +3,11 @@ import os
 import numpy as np
 from stable_baselines3 import PPO
 from stable_baselines3.common.monitor import Monitor
-from config.settings import PPO_TIMESTEPS, AVG_DURATION_MS
+from config.settings import (
+    PPO_TIMESTEPS, AVG_DURATION_MS,
+    PPO_ENT_COEF, PPO_N_STEPS, PPO_BATCH_SIZE,
+    PPO_N_EPOCHS, PPO_CLIP_RANGE, PPO_MAX_GRAD_NORM, PPO_VF_COEF,
+)
 from environment.serverless_env import ServerlessEnv
 
 
@@ -11,10 +15,22 @@ def train_rl(workload_train: np.ndarray, predictions_train: np.ndarray,
              weights_path: str = None):
     """Train PPO on the training workload. Returns (model, global_max_load)."""
     global_max_load = max(float(workload_train.max()), 1.0)
-    env   = Monitor(ServerlessEnv(workload_train, predictions_train,
-                                  avg_duration_ms=AVG_DURATION_MS,
-                                  max_load=global_max_load))
-    model = PPO("MlpPolicy", env, verbose=1, device="cpu")
+    env = Monitor(ServerlessEnv(workload_train, predictions_train,
+                                avg_duration_ms=AVG_DURATION_MS,
+                                max_load=global_max_load))
+    model = PPO(
+        "MlpPolicy", env,
+        verbose           = 0,               # suppress per-iteration tables
+        device            = "cpu",
+        ent_coef          = PPO_ENT_COEF,
+        n_steps           = PPO_N_STEPS,
+        batch_size        = PPO_BATCH_SIZE,
+        n_epochs          = PPO_N_EPOCHS,
+        clip_range        = PPO_CLIP_RANGE,
+        max_grad_norm     = PPO_MAX_GRAD_NORM,
+        vf_coef           = PPO_VF_COEF,
+        normalize_advantage = True,
+    )
     model.learn(total_timesteps=PPO_TIMESTEPS)
     if weights_path:
         os.makedirs(os.path.dirname(weights_path), exist_ok=True)
@@ -26,10 +42,7 @@ def train_rl(workload_train: np.ndarray, predictions_train: np.ndarray,
 def evaluate_rl(model, workload_test: np.ndarray,
                 predictions_test: np.ndarray,
                 global_max_load: float = None) -> list:
-    """Run trained policy on test workload.
-    global_max_load: pass the training max so observations are on the same
-    scale as during training (prevents distribution shift).
-    """
+    """Run trained policy on test workload. Returns per-minute records."""
     env    = ServerlessEnv(workload_test, predictions_test,
                            avg_duration_ms=AVG_DURATION_MS,
                            max_load=global_max_load)
@@ -39,22 +52,18 @@ def evaluate_rl(model, workload_test: np.ndarray,
     while not done:
         action, _  = model.predict(obs, deterministic=True)
         slots      = int(action) + 1
-
-        # Capture pre-step state
-        t_pre     = env._t
-        queue_pre = env._queue
-        arrivals  = (int(round(float(workload_test[t_pre])))
-                     if t_pre < len(workload_test) else 0)
+        t_pre      = env._t
+        queue_pre  = env._queue
+        arrivals   = (int(round(float(workload_test[t_pre])))
+                      if t_pre < len(workload_test) else 0)
 
         obs, reward, terminated, truncated, _ = env.step(int(action))
         done = terminated or truncated
 
         total_demand = queue_pre + arrivals
         processed    = min(total_demand, slots)
-
-        # Response = queue wait + execution time
-        wait_ms     = (queue_pre / max(slots, 1)) * AVG_DURATION_MS
-        response_ms = wait_ms + AVG_DURATION_MS
+        wait_ms      = (queue_pre / max(slots, 1)) * AVG_DURATION_MS
+        response_ms  = wait_ms + AVG_DURATION_MS
 
         if processed > 0:
             records.append({

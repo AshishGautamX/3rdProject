@@ -27,14 +27,30 @@ LSTM_PATIENCE   = 7
 MAX_SLOTS     = 20
 MIN_SLOTS     = 1
 ALPHA         = 1.5    # response-time penalty weight
-BETA          = 0.0    # idle-slot penalty (0 = agent freely over-provisions at peaks)
+BETA          = 0.0    # idle-slot penalty (0 = agent freely over-provisions)
 PPO_TIMESTEPS = 200_000
+
+# PPO stability hyperparameters (explicit to prevent oscillation/entropy collapse)
+PPO_ENT_COEF      = 0.01    # entropy bonus — keeps policy from collapsing prematurely
+PPO_N_STEPS       = 4096    # larger rollout buffer → smoother gradient estimates
+PPO_BATCH_SIZE    = 128     # mini-batch size for PPO update
+PPO_N_EPOCHS      = 10      # epochs per PPO update
+PPO_CLIP_RANGE    = 0.2
+PPO_MAX_GRAD_NORM = 0.5     # gradient clipping — prevents value_loss spikes
+PPO_VF_COEF       = 0.5     # value function coefficient
 
 # ── Simulator ─────────────────────────────────────────────────────────────────
 # Scale normalised load (0-1) → realistic job arrivals per minute.
-# With MAX_SLOTS=20, ARRIVAL_SCALE=50 means peak ≈ 2.5× capacity → queuing.
 ARRIVAL_SCALE   = 25
-AVG_DURATION_MS = 200.0   # ms — used consistently in baseline AND RL env
+AVG_DURATION_MS = 200.0   # ms — used in baseline AND RL env
+
+# Baseline slots = avg expected arrivals so FCFS handles average load
+# but queues during spikes. Fair and defensible static baseline.
+BASELINE_SLOTS  = 10
+
+# Reactive autoscaler thresholds (HPA-style rule-based baseline)
+REACTIVE_SCALE_UP_Q   = 5   # scale up 1 slot if queue depth exceeds this
+REACTIVE_SCALE_DOWN_Q = 2   # scale down 1 slot if queue depth falls below this
 
 # ── LLM (optional) ────────────────────────────────────────────────────────────
 USE_LLM          = False   # set True to enable Groq hint layer
