@@ -49,7 +49,9 @@ class ServerlessEnv(gym.Env):
         self._queue -= processed
         idle_slots   = self._slots - processed
 
-        throughput    = processed / max(self._slots, 1)
+        # Fraction of demand served (not slot efficiency — avoids under-allocation bias)
+        total_demand  = processed + self._queue   # = old_queue + arrivals
+        throughput    = processed / max(total_demand, 1)
         response_norm = min((self.avg_dur + (self._queue / max(self._slots, 1))
                              * self.avg_dur) / 5000.0, 1.0)
         idle_norm     = idle_slots / MAX_SLOTS

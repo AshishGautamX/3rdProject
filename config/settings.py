@@ -26,8 +26,8 @@ LSTM_PATIENCE   = 7
 # ── RL / Environment ──────────────────────────────────────────────────────────
 MAX_SLOTS     = 20
 MIN_SLOTS     = 1
-ALPHA         = 0.5    # response-time penalty weight
-BETA          = 0.2    # idle-slot penalty weight
+ALPHA         = 1.5    # response-time penalty weight
+BETA          = 0.0    # idle-slot penalty (0 = agent freely over-provisions at peaks)
 PPO_TIMESTEPS = 200_000
 
 # ── Simulator ─────────────────────────────────────────────────────────────────

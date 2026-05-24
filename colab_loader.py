@@ -67,13 +67,16 @@ print("Repo ready.")
 
 # === SECTION 4: Load & Preprocess Data =======================================
 import numpy as np
+import warnings
+warnings.filterwarnings("ignore", message=".*Gym has been unmaintained.*")
+warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 from data.loader import load_aggregated_timeseries
 from data.preprocessor import preprocess
 from data.feature_engineer import build_features, make_sequences
 from config.settings import ARRIVAL_SCALE, AVG_DURATION_MS, MAX_SLOTS, HORIZON, WINDOW_SIZE
 
-BASELINE_SLOTS = 10   # fixed slots for the default FCFS scheduler
+BASELINE_SLOTS = 6    # fixed slots for the default FCFS scheduler (under-provisioned)
 
 print("Loading & aggregating data (one CSV at a time) ...")
 raw_ts = load_aggregated_timeseries(DATA_PATH)       # shape (20160,) raw counts
@@ -82,7 +85,7 @@ print("\nPreprocessing (normalise + split) ...")
 train_1d, val_1d, test_1d, scaler = preprocess(raw_ts)   # all in [0, 1]
 
 # Scale normalised load → realistic integer job arrivals for the simulator.
-# ARRIVAL_SCALE=25: avg ~8 jobs/min vs 10 baseline slots — occasional overload.
+# ARRIVAL_SCALE=25: avg ~8 jobs/min vs 6 baseline slots — chronic overload on baseline.
 train_arr = np.clip(np.round(train_1d * ARRIVAL_SCALE).astype(np.float32), 0, ARRIVAL_SCALE * 3)
 val_arr   = np.clip(np.round(val_1d   * ARRIVAL_SCALE).astype(np.float32), 0, ARRIVAL_SCALE * 3)
 test_arr  = np.clip(np.round(test_1d  * ARRIVAL_SCALE).astype(np.float32), 0, ARRIVAL_SCALE * 3)
@@ -107,9 +110,9 @@ gc.collect()
 from models.baseline_scheduler import simulate_baseline
 from evaluation.metrics import summarise
 
-print(f"\nRunning baseline (FCFS, 10 slots, avg_dur={AVG_DURATION_MS}ms) ...")
+print(f"\nRunning baseline (FCFS, {BASELINE_SLOTS} slots, avg_dur={AVG_DURATION_MS}ms) ...")
 baseline_records = simulate_baseline(
-    test_arr, max_slots=10,
+    test_arr, max_slots=BASELINE_SLOTS,
     avg_duration_ms=AVG_DURATION_MS, strategy="fcfs"
 )
 baseline_metrics = summarise(baseline_records, len(test_arr), BASELINE_SLOTS,
