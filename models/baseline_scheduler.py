@@ -1,4 +1,9 @@
-"""Default FCFS / Round-Robin serverless scheduler simulation."""
+"""Default FCFS / Round-Robin serverless scheduler simulation.
+
+Tracks each job's arrival time so response_ms = completion - arrival
+(captures real queuing delay across minutes, not just execution time).
+"""
+from collections import deque
 import numpy as np
 from typing import List, Dict
 
@@ -9,25 +14,24 @@ def simulate_baseline(
     avg_duration_ms: float = 200.0,
     strategy: str = "fcfs",
 ) -> List[Dict]:
-    """Simulate a default scheduler over the test workload.
+    """Simulate FCFS / Round-Robin scheduler over the test workload.
 
-    Parameters
-    ----------
-    invocations    : 1-D array — jobs arriving each minute
-    max_slots      : maximum concurrent execution slots
-    avg_duration_ms: average job execution time in ms
-    strategy       : 'fcfs' or 'round_robin'
+    Each job's response time is measured from its arrival minute to its
+    completion, correctly capturing multi-minute queuing delays.
 
-    Returns list of per-job records with response_ms, wait_ms, slot, queued.
+    Returns list of per-job records.
     """
     records      = []
-    queue        = 0
+    arrival_q    = deque()       # FIFO queue of arrival_time_ms per job
     slot_free_at = [0] * max_slots
 
     for minute, arrivals in enumerate(invocations):
         arrivals = max(0, int(round(float(arrivals))))
-        queue   += arrivals
-        t_ms     = minute * 60_000   # minute → ms
+        t_ms     = minute * 60_000
+
+        # Enqueue all new arrivals (they arrive at t_ms)
+        for _ in range(arrivals):
+            arrival_q.append(t_ms)
 
         slot_order = list(range(max_slots))
         if strategy == "round_robin":
@@ -36,20 +40,22 @@ def simulate_baseline(
             slot_order.sort(key=lambda s: slot_free_at[s])
 
         for slot in slot_order:
-            if queue == 0:
+            if not arrival_q:
                 break
-            start  = max(t_ms, slot_free_at[slot])
-            end    = start + avg_duration_ms
+            job_arrival_ms     = arrival_q.popleft()          # oldest job first
+            start              = max(t_ms, slot_free_at[slot])
+            end                = start + avg_duration_ms
             slot_free_at[slot] = end
             records.append({
                 "minute":      minute,
                 "slot":        slot,
+                "arrival_ms":  job_arrival_ms,
                 "start_ms":    start,
                 "end_ms":      end,
-                "wait_ms":     start - t_ms,
-                "response_ms": end - t_ms,
-                "queued":      queue,
+                "wait_ms":     start - job_arrival_ms,
+                "response_ms": end   - job_arrival_ms,   # ← arrival to completion
+                "queued":      len(arrival_q),
+                "processed":   1,
             })
-            queue -= 1
 
     return records

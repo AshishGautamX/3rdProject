@@ -143,11 +143,19 @@ gc.collect()
 # === SECTION 7: Train RL Scheduler ===========================================
 from models.rl_scheduler import train_rl, evaluate_rl, load_rl
 
-rl_weights     = os.path.join(WEIGHTS_DIR, "ppo_policy")
+rl_weights = os.path.join(WEIGHTS_DIR, "ppo_policy")
+
+# !! Set FORCE_RL_RETRAIN=True whenever ARRIVAL_SCALE or AVG_DURATION_MS change.
+# The old policy was trained on a different scale and will give wrong results.
+FORCE_RL_RETRAIN = True
+if FORCE_RL_RETRAIN and os.path.exists(rl_weights + ".zip"):
+    os.remove(rl_weights + ".zip")
+    print("[rl] Old policy deleted — will retrain on current scale.")
+
 preds_2d_train = np.tile(train_1d[:, None], (1, HORIZON))   # (T, H) normalised
 preds_2d_test  = np.tile(aligned_norm[:, None], (1, HORIZON))
 
-# RL env receives SCALED arrivals so queue dynamics are realistic
+# RL env receives SCALED arrivals so queue dynamics match the baseline sim
 if os.path.exists(rl_weights + ".zip"):
     print("\n[rl] Saved policy found — loading.")
     rl_model = load_rl(rl_weights, train_arr, preds_2d_train)

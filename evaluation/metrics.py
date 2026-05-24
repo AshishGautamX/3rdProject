@@ -16,19 +16,27 @@ def compute_response_time(records: List[Dict], key: str = "response_ms") -> Dict
 
 
 def compute_throughput(records: List[Dict], total_minutes: int) -> float:
-    """Jobs completed per second over the simulation window."""
-    return len(records) / max(total_minutes * 60, 1)
+    """Total jobs processed per second over the simulation window."""
+    total_jobs = sum(r.get("processed", 1) for r in records)
+    return total_jobs / max(total_minutes * 60, 1)
 
 
 def compute_utilisation(records: List[Dict], max_slots: int) -> float:
-    """Average fraction of slots actively used."""
-    vals = []
-    for r in records:
-        if "slot" in r:                             # baseline: 1 job / record
-            vals.append(1.0)
-        elif "slots" in r and "processed" in r:     # RL record
-            vals.append(r["processed"] / max(r["slots"], 1))
-    return float(np.mean(vals)) if vals else 0.0
+    """Fraction of available slot-capacity actually used.
+
+    Baseline: 1 job per record, capacity = max_slots × total_minutes.
+    AI      : each record has 'slots' and 'processed' fields.
+    """
+    if not records:
+        return 0.0
+    if "slots" in records[0]:                      # AI records
+        total_proc = sum(r["processed"] for r in records)
+        total_cap  = sum(r["slots"]     for r in records)
+    else:                                           # baseline records
+        minutes    = (max(r["minute"] for r in records) + 1)
+        total_proc = len(records)
+        total_cap  = max_slots * minutes
+    return total_proc / max(total_cap, 1)
 
 
 def summarise(records: List[Dict], total_minutes: int,
@@ -41,11 +49,11 @@ def summarise(records: List[Dict], total_minutes: int,
     print(f"\n{'='*60}")
     print(f"  {label}")
     print(f"{'='*60}")
-    print(f"  Mean Response Time : {rt['mean']:>8.2f} ms")
-    print(f"  P95  Response Time : {rt['p95']:>8.2f} ms")
-    print(f"  P99  Response Time : {rt['p99']:>8.2f} ms")
-    print(f"  Throughput         : {thr:>8.4f} jobs/sec")
-    print(f"  Resource Util.     : {util*100:>7.2f} %")
+    print(f"  Mean Response Time : {rt['mean']:>10.2f} ms")
+    print(f"  P95  Response Time : {rt['p95']:>10.2f} ms")
+    print(f"  P99  Response Time : {rt['p99']:>10.2f} ms")
+    print(f"  Throughput         : {thr:>10.4f} jobs/sec")
+    print(f"  Resource Util.     : {util*100:>9.2f} %")
     print(f"{'='*60}")
 
     return {"response_mean": rt["mean"], "response_p95": rt["p95"],
