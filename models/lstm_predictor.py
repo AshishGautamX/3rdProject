@@ -1,5 +1,7 @@
 """LSTM workload forecaster (PyTorch).
-Predicts next HORIZON timesteps from a WINDOW_SIZE input sequence.
+Predicts next HORIZON load values from a WINDOW_SIZE input sequence.
+Input X : (N, window, 9 features)
+Output y: (N, horizon)  — forecasted load (first feature column)
 """
 import os
 import numpy as np
@@ -20,13 +22,12 @@ class LSTMForecaster(nn.Module):
         self.input_dim = input_dim
         self.lstm = nn.LSTM(input_dim, hidden_dim, num_layers,
                             batch_first=True, dropout=dropout)
-        self.fc   = nn.Linear(hidden_dim, horizon * input_dim)
+        self.fc   = nn.Linear(hidden_dim, horizon)   # predicts horizon load values
 
     def forward(self, x):
         out, _ = self.lstm(x)
-        last   = out[:, -1, :]
-        pred   = self.fc(last)
-        return pred.view(-1, self.horizon, self.input_dim)
+        last   = out[:, -1, :]          # (B, hidden)
+        return self.fc(last)            # (B, horizon)
 
 
 def train_lstm(X_train, y_train, X_val, y_val, weights_path: str = None):
@@ -76,7 +77,7 @@ def train_lstm(X_train, y_train, X_val, y_val, weights_path: str = None):
 
 
 def predict(model, X: np.ndarray) -> np.ndarray:
-    """Inference → predictions shape (N, horizon, F)."""
+    """Inference → predictions shape (N, horizon)."""
     device = next(model.parameters()).device
     model.eval()
     with torch.no_grad():

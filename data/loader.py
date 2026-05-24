@@ -1,54 +1,87 @@
-"""Load Azure Functions 2019 trace CSVs from Google Drive."""
+"""Load Azure Functions 2019 trace CSVs from Google Drive.
+
+Memory-efficient design: CSVs are read ONE AT A TIME, aggregated immediately
+to a per-minute total, then discarded. Peak RAM never exceeds ~200 MB.
+"""
 import os
+import gc
+import numpy as np
 import pandas as pd
 from config.settings import (
-    DRIVE_DATA_PATH, NUM_DAYS,
-    INVOCATION_FILE_TEMPLATE, DURATION_FILE_TEMPLATE, MEMORY_FILE_TEMPLATE,
+    NUM_DAYS,
+    INVOCATION_FILE_TEMPLATE, DURATION_FILE_TEMPLATE,
+    MIN_TOTAL_INVOCATIONS,
 )
 
+_MINUTE_COLS = [str(i) for i in range(1, 1441)]
 
-def _load_day_files(path: str, template: str, days: int) -> pd.DataFrame:
-    frames = []
+
+def _minute_cols_present(df: pd.DataFrame) -> list:
+    return [c for c in _MINUTE_COLS if c in df.columns]
+
+
+def load_aggregated_timeseries(path: str, days: int = NUM_DAYS) -> np.ndarray:
+    """
+    Stream-load all invocation CSVs one day at a time and return a single
+    1-D array of shape (days * 1440,) containing the total invocations
+    per minute aggregated across all functions.
+
+    Peak RAM: ~one CSV at a time (~100–300 MB) instead of all 14 at once.
+    """
+    daily_totals = []
+
     for day in range(1, days + 1):
-        fpath = os.path.join(path, template.format(day=day))
+        fpath = os.path.join(path, INVOCATION_FILE_TEMPLATE.format(day=day))
         if not os.path.exists(fpath):
-            print(f"[loader] WARNING: {fpath} not found — skipping.")
+            print(f"[loader] Day {day:02d} not found — filling with zeros.")
+            daily_totals.append(np.zeros(1440, dtype=np.float32))
             continue
+
+        # Read only the minute columns (skip metadata string cols)
+        df = pd.read_csv(fpath, usecols=lambda c: c in _MINUTE_COLS)
+        mcols = _minute_cols_present(df)
+
+        # Filter sparse functions before aggregating (saves memory)
+        row_totals = df[mcols].sum(axis=1)
+        df = df.loc[row_totals >= MIN_TOTAL_INVOCATIONS, mcols]
+
+        # Aggregate: total invocations per minute across all functions
+        per_minute = df.sum(axis=0).reindex(_MINUTE_COLS[:len(mcols)], fill_value=0)
+        daily_totals.append(per_minute.values.astype(np.float32))
+
+        n_funcs = len(df)
+        del df, row_totals, per_minute
+        gc.collect()
+        print(f"[loader] Day {day:02d} — {n_funcs} functions aggregated.")
+
+    timeseries = np.concatenate(daily_totals)   # shape: (days * 1440,)
+    print(f"[loader] Timeseries shape: {timeseries.shape} | "
+          f"min={timeseries.min():.0f} max={timeseries.max():.0f}")
+    return timeseries
+
+
+def load_avg_duration(path: str, days: int = NUM_DAYS) -> np.ndarray:
+    """
+    Load average execution duration per minute across all days.
+    Returns shape (days * 1440,) — uses p50 column where available.
+    Falls back to zeros if duration files are missing.
+    """
+    daily_dur = []
+    for day in range(1, days + 1):
+        fpath = os.path.join(path, DURATION_FILE_TEMPLATE.format(day=day))
+        if not os.path.exists(fpath):
+            daily_dur.append(np.full(1440, 200.0, dtype=np.float32))
+            continue
+
         df = pd.read_csv(fpath)
-        df["day"] = day
-        frames.append(df)
-    if not frames:
-        raise FileNotFoundError(f"No files matched '{template}' in '{path}'")
-    return pd.concat(frames, ignore_index=True)
+        # Azure duration CSV has a percentile column (p50 or similar)
+        p50_col = next((c for c in df.columns if "50" in c), None)
+        if p50_col:
+            avg_dur = float(df[p50_col].mean())
+        else:
+            avg_dur = 200.0
+        daily_dur.append(np.full(1440, avg_dur, dtype=np.float32))
+        del df
+        gc.collect()
 
-
-def load_invocations(path: str = DRIVE_DATA_PATH) -> pd.DataFrame:
-    """Per-minute invocation counts for all functions across all days."""
-    return _load_day_files(path, INVOCATION_FILE_TEMPLATE, NUM_DAYS)
-
-
-def load_durations(path: str = DRIVE_DATA_PATH) -> pd.DataFrame:
-    """Execution time percentile data per function per day."""
-    return _load_day_files(path, DURATION_FILE_TEMPLATE, NUM_DAYS)
-
-
-def load_memory(path: str = DRIVE_DATA_PATH) -> pd.DataFrame:
-    """Memory allocation percentiles per app per day."""
-    return _load_day_files(path, MEMORY_FILE_TEMPLATE, NUM_DAYS)
-
-
-def load_all(path: str = DRIVE_DATA_PATH):
-    """Convenience: load invocations, durations, memory in one call."""
-    print("[loader] Loading invocations ...")
-    inv = load_invocations(path)
-    print(f"         Shape: {inv.shape}")
-
-    print("[loader] Loading durations ...")
-    dur = load_durations(path)
-    print(f"         Shape: {dur.shape}")
-
-    print("[loader] Loading memory ...")
-    mem = load_memory(path)
-    print(f"         Shape: {mem.shape}")
-
-    return inv, dur, mem
+    return np.concatenate(daily_dur)
