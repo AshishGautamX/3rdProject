@@ -33,7 +33,7 @@ PPO_TIMESTEPS = 200_000
 # ── Simulator ─────────────────────────────────────────────────────────────────
 # Scale normalised load (0-1) → realistic job arrivals per minute.
 # With MAX_SLOTS=20, ARRIVAL_SCALE=50 means peak ≈ 2.5× capacity → queuing.
-ARRIVAL_SCALE   = 50
+ARRIVAL_SCALE   = 25
 AVG_DURATION_MS = 200.0   # ms — used consistently in baseline AND RL env
 
 # ── LLM (optional) ────────────────────────────────────────────────────────────
